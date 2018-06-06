@@ -1,57 +1,30 @@
 var express = require('express');
 var router = express.Router();
-var dateFormat = require('dateformat');
-
-function publishedAt() {
-  return dateFormat(this.createdAt, "dddd, mmmm dS, yyyy, h:MM TT");
-}
-
-function shortDescription(){ 
-  return this.body.length > 30 ? this.body.substr(0, 30) + "..." : this.body;
-}
-
-var articles = [
-  {
-    id: 1,
-    title: "My First Blog Post",
-    author: "Andrew Chalkley",
-    body: "Lorem ipsum dolor sit amet, consectetur adipiscing elit. Sed eu fermentum metus. Sed blandit at sapien sed porttitor. Curabitur libero velit, blandit vel est ut, cursus aliquam augue. Vivamus aliquam, lorem id lobortis blandit, sem quam gravida nibh, a pulvinar nulla lacus eget tortor. Suspendisse cursus, eros non auctor interdum, quam metus sollicitudin est, nec consequat massa nisi sed purus. Aliquam pellentesque sagittis risus vitae porttitor. In dignissim, enim eget pulvinar semper, magna justo vulputate justo, vitae volutpat sapien dolor eget arcu. Mauris ornare ipsum in est molestie pretium. Pellentesque at nulla at libero sagittis condimentum. Pellentesque tempor quis neque eget aliquam. Curabitur facilisis ultricies erat quis sagittis. Sed eu malesuada neque. Donec tempor dignissim urna, eu efficitur felis porttitor quis.",
-    publishedAt: publishedAt,
-    shortDescription: shortDescription
-  },
-  {
-    id: 2,
-    title: "My Second Blog Post",
-    author: "Andrew Chalkley",
-    body: "Lorem ipsum dolor sit amet, adipiscing elit. Sed eu fermentum metus. Sed blandit at sapien sed porttitor. Curabitur libero velit, blandit vel est ut, cursus aliquam augue. Vivamus aliquam, lorem id lobortis blandit, sem quam gravida nibh, a pulvinar nulla lacus eget tortor. Suspendisse cursus, eros non auctor interdum, quam metus sollicitudin est, nec consequat massa nisi sed purus. Aliquam pellentesque sagittis risus vitae porttitor. In dignissim, enim eget pulvinar semper, magna justo vulputate justo, vitae volutpat sapien dolor eget arcu. Mauris ornare ipsum in est molestie pretium. Pellentesque at nulla at libero sagittis condimentum. Pellentesque tempor quis neque eget aliquam. Curabitur facilisis ultricies erat quis sagittis. Sed eu malesuada neque. Donec tempor dignissim urna, eu efficitur felis porttitor quis.",
-    publishedAt: publishedAt,
-    shortDescription: shortDescription
-  }
-];
-
-
-function find(id) {
-  var matchedArticles = articles.filter(function(article) { return article.id == id; });
-  return matchedArticles[0];
-}
-
+var Article = require("../models").Article;
 
 /* GET articles listing. */
 router.get('/', function(req, res, next) {
-  res.render("articles/index", {articles: articles, title: "My Awesome Blog" });
+  Article.findAll({order: [["createdAt", "DESC"]]}).then(function(articles){
+    res.render("articles/index", {articles: articles, title: "My Awesome Blog" });
+  }).catch(function(error){
+      res.send(500, error);
+   });
 });
 
 /* POST create article. */
 router.post('/', function(req, res, next) {
-  var article = Object.assign({}, req.body, {
-    id: articles.length + 1,
-    publishedAt: publishedAt,
-    shortDescription: shortDescription
-  });
-  articles.push(article);
-
-  res.redirect("/articles/" + article.id);
-});
+  Article.create(req.body).then(function(article) {
+    res.redirect("/articles/" + article.id);
+  }).catch(function(error){
+      if(error.name === "SequelizeValidationError") {
+        res.render("articles/new", {article: Article.build(req.body), errors: error.errors, title: "New Article"})
+      } else {
+        throw error;
+      }
+  }).catch(function(error){
+      res.send(500, error);
+   });
+;});
 
 /* Create a new article form. */
 router.get('/new', function(req, res, next) {
@@ -60,44 +33,81 @@ router.get('/new', function(req, res, next) {
 
 /* Edit article form. */
 router.get("/:id/edit", function(req, res, next){
-  var article = find(req.params.id);  
-
-  res.render("articles/edit", {article: article, title: "Edit Article"});
+  Article.findById(req.params.id).then(function(article){
+    if(article) {
+      res.render("articles/edit", {article: article, title: "Edit Article"});      
+    } else {
+      res.send(404);
+    }
+  }).catch(function(error){
+      res.send(500, error);
+   });
 });
 
 
 /* Delete article form. */
 router.get("/:id/delete", function(req, res, next){
-  var article = find(req.params.id);  
-  
-  res.render("articles/delete", {article: article, title: "Delete Article"});
+  Article.findById(req.params.id).then(function(article){  
+    if(article) {
+      res.render("articles/delete", {article: article, title: "Delete Article"});
+    } else {
+      res.send(404);
+    }
+  }).catch(function(error){
+      res.send(500, error);
+   });
 });
 
 
 /* GET individual article. */
 router.get("/:id", function(req, res, next){
-  var article = find(req.params.id);
-
-  res.render("articles/show", {article: article, title: article.title});
+  Article.findById(req.params.id).then(function(article){
+    if(article) {
+      res.render("articles/show", {article: article, title: article.title});  
+    } else {
+      res.send(404);
+    }
+  }).catch(function(error){
+      res.send(500, error);
+   });
 });
 
 /* PUT update article. */
 router.put("/:id", function(req, res, next){
-  var article = find(req.params.id);
-  article.title = req.body.title;
-  article.body = req.body.body;
-  article.author = req.body.author;
-  
-  res.redirect("/articles/" + article.id);    
+  Article.findById(req.params.id).then(function(article){
+    if(article) {
+      return article.update(req.body);
+    } else {
+      res.send(404);
+    }
+  }).then(function(article){
+    res.redirect("/articles/" + article.id);        
+  }).catch(function(error){
+      if(error.name === "SequelizeValidationError") {
+        var article = Article.build(req.body);
+        article.id = req.params.id;
+        res.render("articles/edit", {article: article, errors: error.errors, title: "Edit Article"})
+      } else {
+        throw error;
+      }
+  }).catch(function(error){
+      res.send(500, error);
+   });
 });
 
 /* DELETE individual article. */
 router.delete("/:id", function(req, res, next){
-  var article = find(req.params.id);  
-  var index = articles.indexOf(article);
-  articles.splice(index, 1);
-
-  res.redirect("/articles");
+  Article.findById(req.params.id).then(function(article){  
+    if(article) {
+      return article.destroy();
+    } else {
+      res.send(404);
+    }
+  }).then(function(){
+    res.redirect("/articles");    
+  }).catch(function(error){
+      res.send(500, error);
+   });
 });
 
 
